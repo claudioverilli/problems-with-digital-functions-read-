@@ -1,0 +1,91 @@
+#include <C:\Program Files (x86)\Arduino\libraries\PCF8574_ESP-master\pcf8574_esp.h>
+#include <pcf8574_esp.h>
+#include <Wire.h>
+
+// Initialize a PCF8574 at I2C-address 0x20, using GPIO5, GPIO4 and testWire for the I2C-bus
+TwoWire testWire;
+PCF857x pcf8574(0x20, &testWire);
+
+#define _TASK_SLEEP_ON_IDLE_RUN
+#define _TASK_STATUS_REQUEST
+#include <C:\Program Files (x86)\Arduino\libraries\TaskScheduler-master\TaskScheduler-master\src\TaskScheduler.h>#ifdef ARDUINO_ARCH_STM32F1
+#define A0	A0
+#endif
+#define h20_poump  13                             //sensore prese acqua idrica  D7
+#define h20_nebul  15                             //sensore acqua nebulizzatore D8
+#define pin3  0                                   //pompa acqua terreno D3
+
+StatusRequest measure;
+
+Scheduler ts; 
+
+// Callback methods prototypes
+void CycleCallback();
+void MeasureCallback(); 
+bool MeasureEnable();
+void MeasureDisable();
+//void CalcCallback();
+void S0Callback(); bool S0Enable();
+
+// Tasks
+Task tCycle(10000, TASK_FOREVER, &CycleCallback, &ts, true);
+Task tMeasure(0, TASK_FOREVER, &MeasureCallback, &ts, false, &MeasureEnable, &MeasureDisable);
+//Task tCalculate(&CalcCallback, &ts);
+Task tSensor0(0, TASK_ONCE, &S0Callback, &ts, false, &S0Enable);
+
+
+void CycleCallback() { Serial.println("CycleCallback: Initiating measurement cycle every 10 seconds");
+                       tMeasure.restartDelayed();
+                     }
+
+bool MeasureEnable() { Serial.println("MeasureEnable: Activating sensors");  
+                       tSensor0.restartDelayed();
+                      
+                       return true;
+                     }
+
+void MeasureCallback() {                        }
+
+void MeasureDisable() { Serial.println("Stop lavoro");  
+                        tSensor0.disable();
+                       
+                      }
+
+/********************************************************************************************************************
+ *         sensore A0   misura l'umidità del terreno ed abilita il funzionamento dela pompa                         *
+ *******************************************************************************************************************/
+bool S0Enable() {return true; }// s=Callback() function not work properly.....
+void S0Callback() { if(analogRead(A0)<=val_umid_terreno&&digitalRead(h20_poump)==0){ pcf8574.write(2, 0);                  //  uscita P2 del pcf8574  pompa h20 on
+                                                                                     Serial.println("task 0 working");
+                                                                                     Serial.print("ANALOGICO  ");
+                                                                                     Serial.println(analogRead(A0));
+                                                                                     Serial.print("presenza acqua  ");
+                                                                                     Serial.println(digitalRead(h20_poump));
+                                                                                   }                 
+                    if(analogRead(A0)>=val_umid_terreno||digitalRead(h20_poump)==1){ pcf8574.write(2, 1);                   //  uscita P2 del pcf8574  pompa h20 off
+                                                                                     Serial.println("task 0 not working");
+                                                                                     Serial.print("ANALOGICO  ");
+                                                                                     Serial.println(analogRead(A0));
+                                                                                    } tSensor0.disable();                     
+                                                                                    }
+
+/** Main Arduino code
+ *  Not much is left here - everything is taken care of by the framework
+ */
+void setup() { 
+               Serial.begin(115200);
+               #ifdef ARDUINO_ARCH_STM32F1
+               pinMode(A0, INPUT_ANALOG);
+               pinMode(h20_poump,INPUT_PULLUP);
+               pinMode(h20_nebul,INPUT_PULLUP);
+               #endif
+               dht.setup(DHTPIN);       // D0
+               testWire.begin(5,4);     //CCC  D1  sda, D2 sck
+               testWire.setClock(100000L);
+               pcf8574.begin();   
+                           
+              }
+
+void loop() { ts.execute(); 
+                
+}
